@@ -1,0 +1,14 @@
+# ─── SECRETS — never commit ───────────────────────────────────────────
+# .mcp.json holds a live N8N_API_KEY. Commit .mcp.json.example instead.
+.mcp.json
+*.key
+*.pem
+.env
+.env.*
+
+# ─── OS / editor noise ────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

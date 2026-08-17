@@ -1,0 +1,510 @@
+{
+  "name": "Inbound Lead Qualification & Routing Swarm",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "inbound-lead",
+        "options": {
+          "responseCode": {
+            "values": {}
+          },
+          "responseData": "received"
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "Lead Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "OpenAI — Enrichment",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Research this inbound lead and produce the three-paragraph brief.\n\nLead name: {{ $json.body.name || 'unknown' }}\nWork email: {{ $json.body.email || 'unknown' }}\nCompany name: {{ $json.body.company || 'unknown' }}\nEmail domain: {{ ($json.body.email || '').split('@')[1] || 'unknown' }}",
+        "options": {
+          "systemMessage": "You are a B2B lead research analyst. Today is {{ $now.format('yyyy-MM-dd') }}.\n\nYou are given an inbound lead: a person's name, work email, and company name. Research the company using the Google search tool connected to you, then write a factual research brief.\n\n## How to research\nUse the Google search tool. Run several targeted searches — do not stop after one. Useful searches:\n- the company's official site and about page\n- the company name with \"employees\" or \"headcount\" or \"team size\"\n- the company name with \"funding\" or \"raised\" or \"acquisition\"\n- the company name with recent news\n- the email domain itself, to confirm you have the right company\n\n## Output format\nWrite exactly three paragraphs of plain prose. No markdown headers, no bullet lists, no JSON.\n\nParagraph 1 — What the company does: business model, product, who they sell to, how they make money.\nParagraph 2 — Firmographics: industry, approximate employee count, approximate revenue, headquarters location, founding year.\nParagraph 3 — Recent news and buying signals from the last 24 months: funding, leadership hires, product launches, expansion, layoffs, acquisitions.\n\n## Accuracy rules — these matter more than completeness\n- Never invent a number. If you cannot find headcount, revenue, or funding in a search result, write that field as \"unknown\" explicitly.\n- If searches return nothing about this company, say so plainly: state that the company could not be identified from public sources. Never substitute a similarly-named company.\n- Prefer the company's own site, Crunchbase, LinkedIn and reputable press over aggregator spam.\n- Distinguish facts from inferences. Mark every inference with the word \"likely\".",
+          "maxIterations": 15,
+          "returnIntermediateSteps": false
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000004",
+      "name": "Enrichment Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        48,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "gpt-5"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000005",
+      "name": "OpenAI — Scoring",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        384,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"score\": {\n      \"type\": \"integer\",\n      \"minimum\": 0,\n      \"maximum\": 100,\n      \"description\": \"Overall ICP fit score out of 100\"\n    },\n    \"reasoning\": {\n      \"type\": \"string\",\n      \"description\": \"Two to three sentences citing which rubric dimensions drove the score\"\n    },\n    \"data_confidence\": {\n      \"type\": \"string\",\n      \"enum\": [\"high\", \"medium\", \"low\"],\n      \"description\": \"How well sourced the underlying research was\"\n    }\n  },\n  \"required\": [\"score\", \"reasoning\", \"data_confidence\"]\n}",
+        "autoFix": true
+      },
+      "id": "a1000000-0000-4000-8000-000000000006",
+      "name": "Score Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        608,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Grade this lead against the ICP rubric and return the JSON object.\n\nLead name: {{ $('Lead Webhook').item.json.body.name || 'unknown' }}\nWork email: {{ $('Lead Webhook').item.json.body.email || 'unknown' }}\nCompany name: {{ $('Lead Webhook').item.json.body.company || 'unknown' }}\n\nResearch brief:\n{{ $json.output }}",
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You are a lead qualification analyst. You grade inbound leads against our Ideal Customer Profile and return a single numeric score as JSON.\n\nGrade ONLY on what the research brief actually says. The brief may contain \"unknown\" values — handle them with the Unknown-data rule below.\n\n## ICP rubric — 100 points total\n\n1. Company size (0-30)\n   30 = 50-500 employees\n   20 = 20-49, or 501-2000 employees\n   10 = 5-19 employees\n   0  = under 5, or over 5000 employees\n\n2. Industry fit (0-25)\n   25 = B2B SaaS, software, technology services, professional or agency services\n   18 = E-commerce, fintech, healthtech, martech\n   10 = Other B2B such as manufacturing, logistics, real estate, construction\n   3  = B2C retail, hospitality, non-profit, education, government\n\n3. Buying signals in the last 24 months (0-25)\n   25 = Raised funding, acquired a company, hired a relevant senior exec, or announced major expansion\n   15 = Active hiring, new product launch, or notable press coverage\n   5  = Operating normally but no notable signals found\n   0  = Signals suggest decline: layoffs, shutdown, or being acquired\n\n4. Email quality (0-10)\n   10 = Corporate domain matching the stated company\n   5  = Corporate domain not matching the stated company\n   2  = Free provider such as gmail.com, yahoo.com, outlook.com, hotmail.com, proton.me, icloud.com\n\n5. Geography (0-10)\n   10 = United States, Canada, United Kingdom, EU, Australia, New Zealand\n   4  = Everywhere else\n\n## Hard disqualifiers — if ANY apply, cap the final score at 20\n- The company could not be identified from public sources\n- The lead is a student, job seeker, or applying for a job\n- The company is a direct competitor selling lead qualification or sales automation software\n- The company is a staffing agency, SEO or link-building spam operation, or a lead-resale broker\n\n## Unknown-data rule\nIf the brief marks a dimension unknown, award the MIDPOINT of that dimension rather than zero, and lower data_confidence. Never guess a value, and never penalise a lead for a gap in our research.\n- Company size unknown -> award 15\n- Industry unknown -> award 12\n- Buying signals unknown or none found -> award 5\n- Geography unknown -> award 7\n\n## data_confidence\nhigh   = size, industry and geography all sourced from the brief\nmedium = exactly one of those is unknown\nlow    = two or more unknown, or the company could not be identified\n\n## Output\nReturn raw JSON only, matching the schema exactly, with field names exactly as specified. DO NOT wrap the output in a markdown code block. DO NOT add any prose before or after the JSON."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000007",
+      "name": "Score Lead",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        432,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f1",
+              "name": "name",
+              "value": "={{ $('Lead Webhook').item.json.body.name || 'unknown' }}",
+              "type": "string"
+            },
+            {
+              "id": "f2",
+              "name": "email",
+              "value": "={{ $('Lead Webhook').item.json.body.email || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "f3",
+              "name": "company",
+              "value": "={{ $('Lead Webhook').item.json.body.company || 'unknown' }}",
+              "type": "string"
+            },
+            {
+              "id": "f4",
+              "name": "brief",
+              "value": "={{ $('Enrichment Agent').item.json.output }}",
+              "type": "string"
+            },
+            {
+              "id": "f5",
+              "name": "score",
+              "value": "={{ ($json.output && $json.output.score !== undefined) ? $json.output.score : $json.score }}",
+              "type": "number"
+            },
+            {
+              "id": "f6",
+              "name": "reasoning",
+              "value": "={{ ($json.output && $json.output.reasoning !== undefined) ? $json.output.reasoning : $json.reasoning }}",
+              "type": "string"
+            },
+            {
+              "id": "f7",
+              "name": "data_confidence",
+              "value": "={{ ($json.output && $json.output.data_confidence !== undefined) ? $json.output.data_confidence : $json.data_confidence }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2000000-0000-4000-8000-000000000001",
+      "name": "Normalize Lead + Score",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        640,
+        0
+      ],
+      "notes": "Single source of truth for everything downstream. If the scoring output shape differs, fix it HERE only."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.score }}",
+              "rightValue": 80,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b2000000-0000-4000-8000-000000000002",
+      "name": "Hot Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        864,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "appToken",
+        "email": "={{ $json.email }}",
+        "additionalFields": {
+          "companyName": "={{ $json.company }}",
+          "contactOwner": "REPLACE_WITH_AE_OWNER_ID",
+          "firstName": "={{ ($json.name || '').split(' ')[0] }}",
+          "lastName": "={{ ($json.name || '').split(' ').slice(1).join(' ') }}"
+        },
+        "options": {}
+      },
+      "id": "b2000000-0000-4000-8000-000000000003",
+      "name": "HubSpot — Assign to AE",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2.2,
+      "position": [
+        1088,
+        -160
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput",
+      "notes": "ACTION REQUIRED: set contactOwner to the HubSpot owner ID of the Account Executive."
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "sales-alerts"
+        },
+        "text": "=:fire: *Hot lead — {{ $('Normalize Lead + Score').item.json.score }}/100*\n\n*Name:* {{ $('Normalize Lead + Score').item.json.name }}\n*Company:* {{ $('Normalize Lead + Score').item.json.company }}\n*Email:* {{ $('Normalize Lead + Score').item.json.email }}\n*Data confidence:* {{ $('Normalize Lead + Score').item.json.data_confidence }}\n\n*Why this score:*\n{{ $('Normalize Lead + Score').item.json.reasoning }}\n\n*Research brief:*\n{{ $('Normalize Lead + Score').item.json.brief }}",
+        "otherOptions": {}
+      },
+      "id": "b2000000-0000-4000-8000-000000000004",
+      "name": "Slack — Alert Sales Team",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.5,
+      "position": [
+        1312,
+        -160
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Write the intro email body for this lead.\n\nName: {{ $('Normalize Lead + Score').item.json.name }}\nCompany: {{ $('Normalize Lead + Score').item.json.company }}\n\nResearch brief:\n{{ $('Normalize Lead + Score').item.json.brief }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You write short first-touch sales emails for a rep to review before sending.\n\nRules:\n- Under 120 words. Plain text, no markdown, no subject line — body only.\n- Open with ONE specific, verifiable detail from the research brief. If the brief marks something unknown or could not identify the company, do not invent a hook — open with a neutral, honest line instead.\n- No flattery, no hype, no 'I hope this finds you well', no fake urgency.\n- One clear low-friction ask at the end, such as asking whether it is worth a short conversation.\n- Sign off as a placeholder the rep replaces: [Your name]\n- Never state a statistic, headcount, funding figure or customer name that is not in the brief."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "id": "b2000000-0000-4000-8000-000000000005",
+      "name": "Write Intro Email",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        1520,
+        -160
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "=Quick question about {{ $('Normalize Lead + Score').item.json.company }}",
+        "message": "={{ $json.text !== undefined ? $json.text : $json.output }}",
+        "options": {
+          "sendTo": "={{ $('Normalize Lead + Score').item.json.email }}"
+        }
+      },
+      "id": "b2000000-0000-4000-8000-000000000006",
+      "name": "Gmail — Draft Intro Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1744,
+        -160
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput",
+      "notes": "Creates a DRAFT only — never sends. The rep reviews and sends manually."
+    },
+    {
+      "parameters": {
+        "authentication": "appToken",
+        "resource": "contactList",
+        "email": "={{ $json.email }}",
+        "listId": 0
+      },
+      "id": "b2000000-0000-4000-8000-000000000007",
+      "name": "HubSpot — Add to Nurture List",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2.2,
+      "position": [
+        1088,
+        160
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput",
+      "notes": "ACTION REQUIRED: set listId to the numeric ID of your 30-day nurture list in HubSpot."
+    },
+    {
+      "parameters": {
+        "additionalFields": {},
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-serpapi.serpApiTool",
+      "typeVersion": 1,
+      "position": [
+        224,
+        224
+      ],
+      "id": "1418d1c9-8b40-405e-a310-a726340ba1d5",
+      "name": "Google search in SerpApi"
+    }
+  ],
+  "connections": {
+    "Lead Webhook": {
+      "main": [
+        [
+          {
+            "node": "Enrichment Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrichment Agent": {
+      "main": [
+        [
+          {
+            "node": "Score Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI — Enrichment": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Enrichment Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI — Scoring": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Score Lead",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Score Output Parser",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Write Intro Email",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Score Lead",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score Lead": {
+      "main": [
+        [
+          {
+            "node": "Normalize Lead + Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Lead + Score": {
+      "main": [
+        [
+          {
+            "node": "Hot Lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hot Lead?": {
+      "main": [
+        [
+          {
+            "node": "HubSpot — Assign to AE",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HubSpot — Add to Nurture List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot — Assign to AE": {
+      "main": [
+        [
+          {
+            "node": "Slack — Alert Sales Team",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack — Alert Sales Team": {
+      "main": [
+        [
+          {
+            "node": "Write Intro Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Intro Email": {
+      "main": [
+        [
+          {
+            "node": "Gmail — Draft Intro Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google search in SerpApi": {
+      "ai_tool": [
+        [
+          {
+            "node": "Enrichment Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true,
+    "binaryMode": "separate"
+  }
+}

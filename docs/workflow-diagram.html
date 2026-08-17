@@ -1,0 +1,200 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Inbound Lead Qualification &amp; Routing Swarm</title>
+<style>
+  @page { size: A4 landscape; margin: 10mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+    color: #14171f; margin: 0; padding: 0; background: #fff;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  h1 { font-size: 19px; margin: 0 0 2px; letter-spacing: -.2px; }
+  .sub { font-size: 10.5px; color: #5b6472; margin-bottom: 14px; }
+  .sub b { color: #14171f; font-weight: 600; }
+
+  .stage { margin-bottom: 13px; }
+  .stage-hd {
+    font-size: 9.5px; font-weight: 700; letter-spacing: .09em;
+    color: #fff; background: #2f3846; display: inline-block;
+    padding: 3px 9px; border-radius: 3px; margin-bottom: 8px;
+  }
+  .stage-hd.s2 { background: #7a4a12; }
+
+  .row { display: flex; align-items: stretch; gap: 6px; }
+  .arrow {
+    align-self: center; font-size: 15px; color: #9aa3b0; flex: 0 0 auto; padding: 0 1px;
+  }
+
+  .box {
+    border: 1.4px solid #2f3846; border-radius: 5px; padding: 7px 9px;
+    background: #fff; flex: 1 1 0; min-width: 0;
+  }
+  .box.trigger { border-color: #1f6f43; background: #f2f9f5; }
+  .box.ai      { border-color: #24507e; background: #f2f7fc; }
+  .box.logic   { border-color: #7a4a12; background: #fdf7ef; }
+  .box.action  { border-color: #6b2f6b; background: #faf3fa; }
+
+  .nm { font-size: 11px; font-weight: 700; margin-bottom: 2px; line-height: 1.2; }
+  .ty { font-size: 7.6px; color: #6b7480; font-family: ui-monospace, Menlo, monospace; margin-bottom: 4px; word-break: break-all; }
+  .pp { font-size: 9.2px; line-height: 1.35; color: #2b333f; }
+
+  .attach { margin-top: 5px; padding-top: 5px; border-top: 1px dashed #c2c9d4; }
+  .att { font-size: 8.4px; line-height: 1.3; color: #3d4552; margin-bottom: 3px; }
+  .att:last-child { margin-bottom: 0; }
+  .att b { color: #14171f; }
+  .tag {
+    display: inline-block; font-size: 6.8px; font-weight: 700; letter-spacing: .05em;
+    padding: 1px 4px; border-radius: 2px; background: #e3e8ef; color: #414a58;
+    vertical-align: middle; margin-right: 3px;
+  }
+
+  .branch { display: flex; gap: 8px; flex: 1 1 0; flex-direction: column; }
+  .lane { display: flex; align-items: stretch; gap: 6px; }
+  .lane-tag {
+    flex: 0 0 52px; display: flex; align-items: center; justify-content: center;
+    font-size: 8.6px; font-weight: 700; border-radius: 4px; text-align: center; line-height: 1.15;
+  }
+  .lane-tag.hot  { background: #fdecec; color: #96231f; border: 1.4px solid #c9433c; }
+  .lane-tag.cold { background: #eef2f7; color: #3d5673; border: 1.4px solid #7b93ae; }
+
+  .foot {
+    margin-top: 10px; border-top: 1px solid #d8dee7; padding-top: 7px;
+    font-size: 8.4px; color: #5b6472; line-height: 1.45;
+  }
+  .foot b { color: #14171f; }
+  .legend { display: flex; gap: 12px; margin-bottom: 5px; flex-wrap: wrap; }
+  .lg { display: flex; align-items: center; gap: 4px; font-size: 8.2px; }
+  .sw { width: 11px; height: 11px; border-radius: 2px; border: 1.4px solid; }
+</style>
+</head>
+<body>
+
+<h1>Inbound Lead Qualification &amp; Routing Swarm</h1>
+<div class="sub">
+  n8n workflow &middot; <b>14 nodes</b> &middot; ID <b>5EjpPLqvYf9l75W7</b> &middot;
+  Endpoint <b>POST /webhook/inbound-lead</b>
+</div>
+
+<!-- STAGE 1 -->
+<div class="stage">
+  <div class="stage-hd">STAGE 1 &nbsp;&mdash;&nbsp; ENRICH &amp; SCORE</div>
+  <div class="row">
+
+    <div class="box trigger">
+      <div class="nm">Lead Webhook</div>
+      <div class="ty">n8n-nodes-base.webhook</div>
+      <div class="pp">Catches the website form POST. Reads name, email and company from <b>$json.body</b>. Replies <b>200</b> immediately so the form never waits on the AI.</div>
+    </div>
+
+    <div class="arrow">&#8594;</div>
+
+    <div class="box ai">
+      <div class="nm">Enrichment Agent</div>
+      <div class="ty">langchain.agent</div>
+      <div class="pp">Researches the company on the web and writes a 3-paragraph brief: what they do, firmographics, recent buying signals. Instructed to write <b>"unknown"</b> rather than invent figures.</div>
+      <div class="attach">
+        <div class="att"><span class="tag">MODEL</span><b>OpenAI &mdash; Enrichment</b> &middot; gpt-5-mini &middot; drives the research loop</div>
+        <div class="att"><span class="tag">TOOL</span><b>Search Google for company info</b> &middot; SerpAPI &middot; the agent's only source of facts</div>
+      </div>
+    </div>
+
+    <div class="arrow">&#8594;</div>
+
+    <div class="box ai">
+      <div class="nm">Score Lead</div>
+      <div class="ty">langchain.chainLlm</div>
+      <div class="pp">Grades the brief against the ICP rubric (size 30 / industry 25 / signals 25 / email 10 / geography 10). Disqualifiers cap the score at 20. Unknown fields score the midpoint, never zero.</div>
+      <div class="attach">
+        <div class="att"><span class="tag">MODEL</span><b>OpenAI &mdash; Scoring</b> &middot; gpt-5 &middot; shared with the parser and the email writer</div>
+        <div class="att"><span class="tag">PARSER</span><b>Score Output Parser</b> &middot; forces JSON <b>{score, reasoning, data_confidence}</b>; auto-fix retries malformed output</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- STAGE 2 -->
+<div class="stage">
+  <div class="stage-hd s2">STAGE 2 &nbsp;&mdash;&nbsp; ROUTE &amp; ACT</div>
+  <div class="row">
+
+    <div class="box logic" style="flex:0 0 150px">
+      <div class="nm">Normalize Lead + Score</div>
+      <div class="ty">n8n-nodes-base.set</div>
+      <div class="pp">Flattens everything into one clean item: name, email, company, brief, score, reasoning, confidence. <b>Single place to fix</b> if the score shape shifts.</div>
+    </div>
+
+    <div class="arrow">&#8594;</div>
+
+    <div class="box logic" style="flex:0 0 128px">
+      <div class="nm">Hot Lead?</div>
+      <div class="ty">n8n-nodes-base.if</div>
+      <div class="pp">The traffic director. Numeric test: <b>score &ge; 80</b>. True output feeds the sales path, false output feeds nurture.</div>
+    </div>
+
+    <div class="arrow">&#8594;</div>
+
+    <div class="branch">
+      <!-- HOT -->
+      <div class="lane">
+        <div class="lane-tag hot">HOT<br>&ge; 80</div>
+        <div class="box action">
+          <div class="nm">HubSpot &mdash; Assign to AE</div>
+          <div class="ty">hubspot &middot; contact: upsert</div>
+          <div class="pp">Creates or updates the contact and assigns the Account Executive via <b>contactOwner</b>.</div>
+        </div>
+        <div class="arrow">&#8594;</div>
+        <div class="box action">
+          <div class="nm">Slack &mdash; Alert Sales Team</div>
+          <div class="ty">slack &middot; message: post</div>
+          <div class="pp">Posts to <b>#sales-alerts</b> with name, company, score, confidence, reasoning and the full brief.</div>
+        </div>
+        <div class="arrow">&#8594;</div>
+        <div class="box ai">
+          <div class="nm">Write Intro Email</div>
+          <div class="ty">langchain.chainLlm</div>
+          <div class="pp">Drafts a &lt;120-word intro opening on one real detail from the brief. Barred from citing any figure not in the brief.</div>
+        </div>
+        <div class="arrow">&#8594;</div>
+        <div class="box action">
+          <div class="nm">Gmail &mdash; Draft Intro Email</div>
+          <div class="ty">gmail &middot; draft: create</div>
+          <div class="pp"><b>Creates a draft only &mdash; never sends.</b> Waits in the rep's folder for human review.</div>
+        </div>
+      </div>
+
+      <!-- COLD -->
+      <div class="lane">
+        <div class="lane-tag cold">COLD<br>&lt; 80</div>
+        <div class="box action" style="flex:0 0 230px">
+          <div class="nm">HubSpot &mdash; Add to Nurture List</div>
+          <div class="ty">hubspot &middot; contactList: add</div>
+          <div class="pp">Drops the lead into the 30-day marketing list by email. No rep is alerted, keeping the sales calendar clear of low-propensity buyers.</div>
+        </div>
+        <div style="flex:1 1 auto; display:flex; align-items:center; padding-left:10px; font-size:8.8px; color:#5b6472; line-height:1.4;">
+          Cold leads stop here by design &mdash; no Slack alert, no email draft, no AE assignment.
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="foot">
+  <div class="legend">
+    <div class="lg"><span class="sw" style="border-color:#1f6f43;background:#f2f9f5"></span> Trigger</div>
+    <div class="lg"><span class="sw" style="border-color:#24507e;background:#f2f7fc"></span> AI / LLM</div>
+    <div class="lg"><span class="sw" style="border-color:#7a4a12;background:#fdf7ef"></span> Logic</div>
+    <div class="lg"><span class="sw" style="border-color:#6b2f6b;background:#faf3fa"></span> Action / integration</div>
+  </div>
+  <b>Reliability:</b> both LLM steps and all three integrations retry twice on failure. HubSpot, Slack and Gmail use
+  <b>onError: continueRegularOutput</b>, so a CRM hiccup can never swallow the Slack alert for a hot lead.
+  &nbsp;&middot;&nbsp;
+  <b>Before going live:</b> set <b>contactOwner</b> (AE owner ID), <b>listId</b> (nurture list ID), confirm the Slack channel, and fund the OpenAI API key.
+</div>
+
+</body>
+</html>
